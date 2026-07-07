@@ -38,6 +38,9 @@
 #include "Point.hpp"
 #include "Polygon.hpp"
 #include "PrintConfig.hpp"
+#include "Wireframe.hpp"
+#include "ExPolygon.hpp"
+#include <limits>
 #include "ShortestPath.hpp"
 #include "Print.hpp"
 #include "Thread.hpp"
@@ -1295,6 +1298,10 @@ void GCodeGenerator::_do_export(Print& print, GCodeOutputStream &file, Thumbnail
 
     GCode::SmoothPathCache smooth_path_cache_global = smooth_path_interpolate_global(print);
 
+    // Wire printing replaces the whole planar per-layer export with a wireframe cage.
+    if (print.config().wireframe_enabled.value) {
+        this->export_wireframe(print, file);
+    } else
     // Do all objects for each layer.
     if (print.config().complete_objects.value) {
         size_t finished_objects = 0;
@@ -1522,6 +1529,97 @@ void GCodeGenerator::_do_export(Print& print, GCodeOutputStream &file, Thumbnail
         }
     }
     print.throw_if_canceled();
+}
+
+void GCodeGenerator::export_wireframe(const Print &print, GCodeOutputStream &file)
+{
+    const PrintConfig &cfg         = print.config();
+    const unsigned int extruder_id = m_writer.extruder()->id();
+
+    // Geometry parameters (millimeters / radians).
+    WireframeParams gp;
+    gp.connection_height = cfg.wireframe_height.value;
+    gp.roof_inset        = cfg.wireframe_roof_inset.value;
+    gp.nozzle_clearance  = cfg.wireframe_nozzle_clearance.value;
+    gp.nozzle_outer_diam = cfg.wireframe_nozzle_outer_diameter.value;
+    gp.nozzle_expansion  = cfg.wireframe_nozzle_expansion_angle.value * M_PI / 180.;
+
+    // Flow: treat a wireframe line as a round bead the width of the nozzle.
+    const double line_width = cfg.nozzle_diameter.get_at(extruder_id);
+    const double line_area  = M_PI * (line_width * 0.5) * (line_width * 0.5);
+
+    WireframeGCodeParams wp;
+    wp.mm3_per_mm_connection = line_area * cfg.wireframe_flow_connection.value / 100.;
+    wp.mm3_per_mm_flat       = line_area * cfg.wireframe_flow_flat.value / 100.;
+    wp.node_spacing          = gp.node_spacing();
+    wp.speed_bottom          = cfg.wireframe_printspeed_bottom.value;
+    wp.speed_up              = cfg.wireframe_printspeed_up.value;
+    wp.speed_down            = cfg.wireframe_printspeed_down.value;
+    wp.speed_flat            = cfg.wireframe_printspeed_flat.value;
+    wp.flat_delay            = cfg.wireframe_flat_delay.value;
+    wp.bottom_delay          = cfg.wireframe_bottom_delay.value;
+    wp.top_delay             = cfg.wireframe_top_delay.value;
+    wp.up_half_speed         = cfg.wireframe_up_half_speed.value;
+    wp.top_jump              = cfg.wireframe_top_jump.value;
+    wp.fall_down             = cfg.wireframe_fall_down.value;
+    wp.drag_along            = cfg.wireframe_drag_along.value;
+    wp.straight_before_down  = cfg.wireframe_straight_before_down.value / 100.;
+    wp.roof_fall_down        = cfg.wireframe_roof_fall_down.value;
+    wp.roof_drag_along       = cfg.wireframe_roof_drag_along.value;
+    wp.roof_outer_delay      = cfg.wireframe_roof_outer_delay.value;
+    wp.connection_height     = gp.connection_height;
+    switch (cfg.wireframe_strategy.value) {
+    case wsKnot:    wp.strategy = WireframeStrategyKind::Knot;    break;
+    case wsRetract: wp.strategy = WireframeStrategyKind::Retract; break;
+    default:        wp.strategy = WireframeStrategyKind::Compensate; break;
+    }
+
+    auto emit = [&file](const std::string &s) { if (! s.empty()) file.write(s); };
+
+    // World placement: bake the instance shift (minus the extruder offset) into the cross-section
+    // coordinates, so the wireframe module can emit absolute millimeter coordinates directly.
+    const Vec2d  extruder_offset = cfg.extruder_offset.get_at(extruder_id);
+    const Point  extruder_offset_scaled(scaled(extruder_offset.x()), scaled(extruder_offset.y()));
+
+    for (const PrintObject *object : print.objects()) {
+        const auto layers = object->layers();
+        if (layers.empty())
+            continue;
+
+        // Re-sample the already-sliced cross-sections at the coarse connection height.
+        std::vector<Polygons> slices;
+        std::vector<double>   slice_z;
+        const double first_z = layers.front()->print_z;
+        const double top_z   = layers.back()->print_z;
+        for (double z = first_z; z <= top_z + EPSILON; z += gp.connection_height) {
+            const Layer *best = nullptr;
+            double       best_d = std::numeric_limits<double>::max();
+            for (const Layer *l : layers) {
+                double d = std::abs(l->print_z - z);
+                if (d < best_d) { best_d = d; best = l; }
+            }
+            if (best == nullptr)
+                continue;
+            slices.emplace_back(to_polygons(best->lslices));
+            slice_z.emplace_back(best->print_z);
+        }
+        if (slices.size() < 2)
+            continue;
+
+        m_max_layer_z = std::max(m_max_layer_z, float(top_z));
+
+        for (const PrintInstance &instance : object->instances()) {
+            const Point shift = instance.shift - extruder_offset_scaled;
+            std::vector<Polygons> world_slices = slices;
+            for (Polygons &ps : world_slices)
+                for (Polygon &p : ps)
+                    p.translate(shift);
+
+            WireFrame wire_frame = build_wireframe(world_slices, slice_z, gp);
+            write_wireframe_gcode(wire_frame, m_writer, wp, emit);
+            print.throw_if_canceled();
+        }
+    }
 }
 
 // Fill in cache of smooth paths for perimeters, fills and supports of the given object layers.
