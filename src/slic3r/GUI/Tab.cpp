@@ -1556,6 +1556,10 @@ void TabPrint::build()
 
         optgroup = page->new_optgroup(L("Flow and speed"));
         optgroup->append_single_option_line("eridian_flow");
+        optgroup->append_single_option_line("eridian_pillar_flow");
+        optgroup->append_single_option_line("eridian_pillar_lift");
+        optgroup->append_single_option_line("eridian_pillar_prime");
+        optgroup->append_single_option_line("eridian_pillar_exclusion");
         optgroup->append_single_option_line("eridian_speed_flat");
         optgroup->append_single_option_line("eridian_speed_pillar");
 

@@ -1549,9 +1549,12 @@ void GCodeGenerator::export_eridian(const Print &print, GCodeOutputStream &file)
     ep.pillar_height     = cfg.eridian_pillar_height.value;
     ep.lattice_spacing   = cfg.eridian_lattice_spacing.value;
     ep.mm3_per_mm_flat   = line_area * cfg.eridian_flow.value / 100.;
-    ep.mm3_per_mm_pillar = line_area * cfg.eridian_flow.value / 100.;
+    ep.mm3_per_mm_pillar = line_area * cfg.eridian_pillar_flow.value / 100.;
     ep.speed_flat        = cfg.eridian_speed_flat.value;
     ep.speed_pillar      = cfg.eridian_speed_pillar.value;
+    ep.pillar_lift       = cfg.eridian_pillar_lift.value;
+    ep.pillar_prime      = cfg.eridian_pillar_prime.value;
+    ep.pillar_exclusion  = cfg.eridian_pillar_exclusion.value;
 
     for (const PrintObject *object : print.objects()) {
         const auto layers = object->layers();

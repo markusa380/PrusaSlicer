@@ -3195,6 +3195,51 @@ void PrintConfigDef::init_fff_params()
     def->mode = comExpert;
     def->set_default_value(new ConfigOptionPercent(100));
 
+    def = this->add("eridian_pillar_flow", coPercent);
+    def->label = L("Pillar flow");
+    def->category = L("Eridian");
+    def->tooltip = L("Extrusion multiplier for the vertical pillars and overhang braces. Pillars "
+                     "printed in the air need to be heavily over-extruded so they come out fat and "
+                     "sturdy; values well above 100% are normal.");
+    def->sidetext = L("%");
+    def->min = 0;
+    def->mode = comExpert;
+    def->set_default_value(new ConfigOptionPercent(300));
+
+    def = this->add("eridian_pillar_lift", coFloat);
+    def->label = L("Pillar lift");
+    def->category = L("Eridian");
+    def->tooltip = L("After a pillar finishes extruding, the nozzle keeps moving up by this amount "
+                     "without extruding, drawing the molten tip out straight so the pillar stays "
+                     "upright instead of slumping over.");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->mode = comExpert;
+    def->set_default_value(new ConfigOptionFloat(1.0));
+
+    def = this->add("eridian_pillar_prime", coFloat);
+    def->label = L("Pillar re-prime");
+    def->category = L("Eridian");
+    def->tooltip = L("Amount of filament re-primed after each pillar lift. The lift lets the nozzle "
+                     "ooze and the retraction pulls the filament back too far, starving the next "
+                     "pillar; this pushes that material back before the next pillar is drawn.");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->mode = comExpert;
+    def->set_default_value(new ConfigOptionFloat(0.8));
+
+    def = this->add("eridian_pillar_exclusion", coFloat);
+    def->label = L("Pillar exclusion radius");
+    def->category = L("Eridian");
+    def->tooltip = L("Keep-out radius around every pillar. Within one layer, no second pillar is "
+                     "printed closer than this to an already-printed one, so the print head cannot "
+                     "collide with a standing pillar while making the next. Larger values give a "
+                     "sparser, safer set of pillars.");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->mode = comExpert;
+    def->set_default_value(new ConfigOptionFloat(8.0));
+
     def = this->add("eridian_speed_flat", coFloat);
     def->label = L("Flat speed");
     def->category = L("Eridian");

@@ -27,10 +27,14 @@ struct EridianParams
     double lattice_spacing  = 5.0; // triangular lattice edge length (mm)
 
     double mm3_per_mm_flat   = 0.; // volumetric flow for the flat net lines
-    double mm3_per_mm_pillar = 0.; // volumetric flow for pillars and braces
+    double mm3_per_mm_pillar = 0.; // volumetric flow for pillars and braces (over-extruded)
 
     double speed_flat   = 5.; // mm/s
     double speed_pillar = 5.; // mm/s
+
+    double pillar_lift      = 1.; // extra travel along the pillar axis after extrusion stops (mm)
+    double pillar_prime     = 0.8; // filament re-primed after each pillar lift (mm)
+    double pillar_exclusion = 8.;  // keep-out radius around a printed pillar; no pillar within (mm)
 };
 
 // Emit the Eridian truss for cross-sections `layers` sliced at heights `z` (mm), in absolute

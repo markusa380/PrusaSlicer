@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <queue>
 #include <set>
 #include <unordered_map>
 
@@ -183,21 +184,117 @@ struct EriGCode
     {
         if ((writer.get_position() - to).squaredNorm() >= retract_threshold_mm2)
             emit(writer.retract());
-        set_speed(cur_speed > 0. ? cur_speed : 30.);
         emit(writer.travel_to_xyz(to));
         emit(writer.unretract());
+        // travel_to_xyz and retract/unretract emit their own feedrate (travel / retract speed).
+        // Invalidate our tracker so the next extrusion re-emits its print feedrate rather than
+        // silently inheriting the fast travel speed.
+        cur_speed = -1.;
     }
 
+    // Re-prime the extruder in place (compensates the retraction / ooze after a pillar lift so the
+    // next pillar is not starved of material). `e_mm` is millimeters of filament.
+    void prime(double e_mm)
+    {
+        if (e_mm <= 0.) return;
+        const double e = writer.extruder()->extrude(e_mm).second;
+        char buf[64];
+        snprintf(buf, sizeof(buf), "G1 E%.5f F2400\n", e);
+        emit(buf);
+        cur_speed = -1.; // our own F line desyncs the tracker; force a re-emit next extrusion
+    }
+
+    // Extrude from the current position straight to `b` (no travel). Used for the continuous net.
+    void line_to(const Vec3d &b, double mm3_per_mm, double speed)
+    {
+        const Vec3d  from = writer.get_position();
+        const double len  = (b - from).norm();
+        const double dE   = writer.extruder()->e_per_mm3() * mm3_per_mm * len;
+        set_speed(speed);
+        emit(writer.extrude_to_xyz(b, dE, "eridian net"));
+    }
+
+    // Travel to `a` if needed, then extrude to `b`. Used for pillars and braces.
     void strut(const Vec3d &a, const Vec3d &b, double mm3_per_mm, double speed)
     {
         if ((writer.get_position() - a).squaredNorm() > 1e-6)
             travel_to(a);
-        const double len = (b - a).norm();
-        const double dE  = writer.extruder()->e_per_mm3() * mm3_per_mm * len;
-        set_speed(speed);
-        emit(writer.extrude_to_xyz(b, dE, "eridian"));
+        line_to(b, mm3_per_mm, speed);
     }
 };
+
+// Route every edge of a net into continuous polylines (one per connected component), so a layer
+// can be drawn in a single stroke per island. The graph rarely has an Eulerian circuit, so odd
+// degree vertices are paired and the edges along a shortest path between them are duplicated
+// (route inspection / T-join); Hierholzer's algorithm then yields an Eulerian circuit that walks
+// every edge (a few of them twice).
+static std::vector<std::vector<int>> euler_routes(const Net &net)
+{
+    const int n = int(net.verts.size());
+    struct HE { int to; int id; };
+    std::vector<std::vector<HE>>    adj(n);
+    std::vector<std::pair<int,int>> E = net.edges;
+    auto add_he = [&](int a, int b, int id) { adj[a].push_back({ b, id }); adj[b].push_back({ a, id }); };
+    for (int i = 0; i < int(E.size()); ++i) add_he(E[i].first, E[i].second, i);
+
+    std::vector<char> used(E.size(), 0);
+    std::vector<char> seen(n, 0);
+    std::vector<std::vector<int>> routes;
+
+    for (int s = 0; s < n; ++s) {
+        if (seen[s] || adj[s].empty()) continue;
+
+        // Collect the connected component.
+        std::vector<int> comp;
+        std::queue<int>  q;
+        q.push(s); seen[s] = 1;
+        while (! q.empty()) {
+            int v = q.front(); q.pop();
+            comp.push_back(v);
+            for (const HE &he : adj[v]) if (! seen[he.to]) { seen[he.to] = 1; q.push(he.to); }
+        }
+
+        // Make every vertex even by duplicating edges along shortest paths between odd vertices.
+        std::vector<int> odd;
+        for (int v : comp) if (adj[v].size() & 1) odd.push_back(v);
+        for (size_t i = 0; i + 1 < odd.size(); i += 2) {
+            const int a = odd[i], b = odd[i + 1];
+            std::vector<int>  prevV(n, -1), prevE(n, -1);
+            std::vector<char> vis(n, 0);
+            std::queue<int>   bq;
+            bq.push(a); vis[a] = 1;
+            while (! bq.empty()) {
+                int v = bq.front(); bq.pop();
+                if (v == b) break;
+                for (const HE &he : adj[v]) if (! vis[he.to]) { vis[he.to] = 1; prevV[he.to] = v; prevE[he.to] = he.id; bq.push(he.to); }
+            }
+            for (int v = b; v != a && prevV[v] != -1; v = prevV[v]) {
+                const int nid = int(E.size());
+                E.push_back(E[prevE[v]]);
+                used.push_back(0);
+                add_he(prevV[v], v, nid);
+            }
+        }
+
+        // Hierholzer's algorithm.
+        std::vector<int> cursor(n, 0), stack{ s }, circuit;
+        while (! stack.empty()) {
+            int v = stack.back();
+            while (cursor[v] < int(adj[v].size()) && used[adj[v][cursor[v]].id]) ++cursor[v];
+            if (cursor[v] < int(adj[v].size())) {
+                const HE &he = adj[v][cursor[v]++];
+                used[he.id] = 1;
+                stack.push_back(he.to);
+            } else {
+                circuit.push_back(v);
+                stack.pop_back();
+            }
+        }
+        std::reverse(circuit.begin(), circuit.end());
+        if (circuit.size() >= 2) routes.push_back(std::move(circuit));
+    }
+    return routes;
+}
 
 } // namespace
 
@@ -237,7 +334,18 @@ void write_eridian_gcode(const std::vector<ExPolygons>                 &layers,
             const Net   &below = nets[k - 1];
             const double z_lo  = z[k - 1];
             const double z_hi  = z[k];
+            // Keep-out: no two pillars in the same layer closer than the exclusion radius, so the
+            // print head cannot foul an already-standing pillar while making the next one.
+            std::vector<Vec2d> placed;
+            const double       excl2 = params.pillar_exclusion * params.pillar_exclusion;
             for (const Vert &v : here.verts) {
+                const Vec2d xy(unscale<double>(v.p.x()), unscale<double>(v.p.y()));
+                bool blocked = false;
+                for (const Vec2d &q : placed)
+                    if ((q - xy).squaredNorm() < excl2) { blocked = true; break; }
+                if (blocked)
+                    continue;
+
                 const Vert *low = nullptr;
                 if (v.interior) {
                     auto it = below.grid.find(v.key);
@@ -252,16 +360,38 @@ void write_eridian_gcode(const std::vector<ExPolygons>                 &layers,
                         if (d < best) { best = d; low = &b; }
                     }
                 }
-                if (low != nullptr)
-                    g.strut(vertex3(low->p, z_lo), vertex3(v.p, z_hi), params.mm3_per_mm_pillar, params.speed_pillar);
+                if (low != nullptr) {
+                    placed.push_back(xy);
+                    const Vec3d base = vertex3(low->p, z_lo);
+                    const Vec3d top  = vertex3(v.p, z_hi);
+                    // Travel to the base, then re-prime just before extruding this pillar, so the
+                    // material lost to ooze / over-retraction on the way here is replaced right
+                    // where the pillar starts (not deposited in the air after the previous lift).
+                    g.travel_to(base);
+                    g.prime(params.pillar_prime);
+                    g.line_to(top, params.mm3_per_mm_pillar, params.speed_pillar);
+                    // Keep pulling the nozzle after extrusion stops, continuing along the pillar's
+                    // own axis (not just straight up), so an angled brace is drawn out in its
+                    // direction and stays taut instead of slumping over.
+                    if (params.pillar_lift > 0.) {
+                        Vec3d dir = top - base;
+                        const double len = dir.norm();
+                        dir = (len > EPSILON) ? (dir / len) : Vec3d(0, 0, 1);
+                        g.travel_to(top + dir * params.pillar_lift);
+                    }
+                }
             }
         }
 
-        // Draw the flat triangular net at this layer's height.
+        // Draw the flat triangular net at this layer's height in one continuous stroke per island.
         const double zz = z[k];
-        for (const auto &e : here.edges)
-            g.strut(vertex3(here.verts[e.first].p, zz), vertex3(here.verts[e.second].p, zz),
-                    params.mm3_per_mm_flat, params.speed_flat);
+        for (const std::vector<int> &route : euler_routes(here)) {
+            if (route.size() < 2) continue;
+            g.travel_to(vertex3(here.verts[route.front()].p, zz));
+            g.prime(params.pillar_prime); // prime at the start of each layer/island's net
+            for (size_t i = 1; i < route.size(); ++i)
+                g.line_to(vertex3(here.verts[route[i]].p, zz), params.mm3_per_mm_flat, params.speed_flat);
+        }
     }
 
     emit(writer.retract());
