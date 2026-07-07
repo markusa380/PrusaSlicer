@@ -246,13 +246,6 @@ static const t_config_enum_values s_keys_map_DraftShield = {
 };
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(DraftShield)
 
-static const t_config_enum_values s_keys_map_WireframeStrategy = {
-    { "compensate", wsCompensate },
-    { "knot",       wsKnot       },
-    { "retract",    wsRetract    }
-};
-CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(WireframeStrategy)
-
 static const t_config_enum_values s_keys_map_LabelObjectsStyle = {
     { "disabled",  int(LabelObjectsStyle::Disabled)  },
     { "octoprint", int(LabelObjectsStyle::Octoprint) },
@@ -3159,245 +3152,67 @@ void PrintConfigDef::init_fff_params()
                    "It won't work when printing more than one single object.");
     def->set_default_value(new ConfigOptionBool(false));
 
-    // "Wire Printing" (Cura WirePrint / Weaver). A print-wide mode that abandons the normal
-    // planar slicing pipeline and instead prints the model as a mid-air wireframe cage.
-    def = this->add("wireframe_enabled", coBool);
-    def->label = L("Enable wire printing");
-    def->category = L("Wireframe");
-    def->tooltip = L("Print the model as a sparse wireframe cage instead of a solid object. "
-                     "The nozzle draws horizontal struts along each cross-section and connects "
-                     "them with diagonal moves extruded up into the air, which cool fast enough "
-                     "to hold their shape. Perimeters, infill and support are all disabled in this mode. "
-                     "Based on Cura's \"WirePrint\" / Weaver.");
+    // "Eridian Mode" — an alternative wire-printing algorithm (named after the Eridians in
+    // "Project Hail Mary"): a triangular lattice net is printed flat at every layer, vertical
+    // pillars are extruded up at the net vertices, and the next net connects the pillar tops.
+    // Under overhangs, extra triangles are braced outward from the pillars.
+    def = this->add("eridian_mode", coBool);
+    def->label = L("Eridian mode");
+    def->category = L("Eridian");
+    def->tooltip = L("Use the Eridian truss algorithm instead of the Cura-style wireframe cage. "
+                     "Each layer is a flat triangular lattice; vertical pillars connect the lattice "
+                     "vertices between layers, and overhangs are braced outward with triangles. "
+                     "Requires wire printing to be enabled.");
     def->mode = comExpert;
     def->set_default_value(new ConfigOptionBool(false));
 
-    def = this->add("wireframe_height", coFloat);
-    def->label = L("Connection height");
-    def->category = L("Wireframe");
-    def->tooltip = L("The vertical distance between two consecutive horizontal parts of the wireframe. "
-                     "This is the wireframe equivalent of the layer height.");
+    def = this->add("eridian_pillar_height", coFloat);
+    def->label = L("Pillar height");
+    def->category = L("Eridian");
+    def->tooltip = L("The vertical distance between two consecutive lattice layers, i.e. the height "
+                     "of each pillar.");
     def->sidetext = L("mm");
     def->min = 0.1;
     def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(3.0));
+    def->set_default_value(new ConfigOptionFloat(2.0));
 
-    def = this->add("wireframe_roof_inset", coFloat);
-    def->label = L("Roof inset distance");
-    def->category = L("Wireframe");
-    def->tooltip = L("The horizontal distance between the concentric rings that fill in a flat "
-                     "top surface (roof) or bottom surface (floor) of the wireframe.");
+    def = this->add("eridian_lattice_spacing", coFloat);
+    def->label = L("Lattice spacing");
+    def->category = L("Eridian");
+    def->tooltip = L("The edge length of the triangular lattice that forms each flat layer. Smaller "
+                     "values give a denser, stronger truss but a slower print.");
     def->sidetext = L("mm");
-    def->min = 0;
+    def->min = 0.5;
     def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(3.0));
+    def->set_default_value(new ConfigOptionFloat(5.0));
 
-    def = this->add("wireframe_nozzle_clearance", coFloat);
-    def->label = L("Nozzle clearance");
-    def->category = L("Wireframe");
-    def->tooltip = L("Extra spacing kept between struts so the nozzle body does not collide with "
-                     "already-printed filament. Larger values give a coarser, safer cage.");
-    def->sidetext = L("mm");
-    def->min = 0;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(1.0));
-
-    def = this->add("wireframe_nozzle_outer_diameter", coFloat);
-    def->label = L("Nozzle outer diameter");
-    def->category = L("Wireframe");
-    def->tooltip = L("The outer diameter of the nozzle tip. Used together with the expansion angle "
-                     "to compute how far apart neighbouring struts must be.");
-    def->sidetext = L("mm");
-    def->min = 0;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(1.0));
-
-    def = this->add("wireframe_nozzle_expansion_angle", coFloat);
-    def->label = L("Nozzle expansion angle");
-    def->category = L("Wireframe");
-    def->tooltip = L("The angle between the nozzle tip and the wider part of the nozzle above it. "
-                     "Used to compute the minimum spacing between struts.");
-    def->sidetext = L("°");
-    def->min = 0;
-    def->max = 89;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(45));
-
-    def = this->add("wireframe_flow_connection", coPercent);
-    def->label = L("Connection flow");
-    def->category = L("Wireframe");
-    def->tooltip = L("Flow compensation for the diagonal and vertical connection lines.");
+    def = this->add("eridian_flow", coPercent);
+    def->label = L("Flow");
+    def->category = L("Eridian");
+    def->tooltip = L("Flow compensation for the truss lines (both the flat lattice and the pillars/braces).");
     def->sidetext = L("%");
     def->min = 0;
     def->mode = comExpert;
     def->set_default_value(new ConfigOptionPercent(100));
 
-    def = this->add("wireframe_flow_flat", coPercent);
-    def->label = L("Flat flow");
-    def->category = L("Wireframe");
-    def->tooltip = L("Flow compensation for the horizontal lines lying on top of a cross-section.");
-    def->sidetext = L("%");
-    def->min = 0;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionPercent(100));
-
-    def = this->add("wireframe_printspeed_bottom", coFloat);
-    def->label = L("Bottom speed");
-    def->category = L("Wireframe");
-    def->tooltip = L("Speed at which the bottom-most layer is printed.");
-    def->sidetext = L("mm/s");
-    def->min = 0;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(5));
-
-    def = this->add("wireframe_printspeed_up", coFloat);
-    def->label = L("Upward speed");
-    def->category = L("Wireframe");
-    def->tooltip = L("Speed of the diagonal moves going up into the air. Should be slow so the "
-                     "filament has time to cool and solidify.");
-    def->sidetext = L("mm/s");
-    def->min = 0;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(5));
-
-    def = this->add("wireframe_printspeed_down", coFloat);
-    def->label = L("Downward speed");
-    def->category = L("Wireframe");
-    def->tooltip = L("Speed of the diagonal moves coming back down onto the previous cross-section.");
-    def->sidetext = L("mm/s");
-    def->min = 0;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(5));
-
-    def = this->add("wireframe_printspeed_flat", coFloat);
+    def = this->add("eridian_speed_flat", coFloat);
     def->label = L("Flat speed");
-    def->category = L("Wireframe");
-    def->tooltip = L("Speed at which the horizontal lines on top of a cross-section are printed.");
+    def->category = L("Eridian");
+    def->tooltip = L("Speed at which the flat triangular lattice of each layer is printed.");
     def->sidetext = L("mm/s");
     def->min = 0;
     def->mode = comExpert;
     def->set_default_value(new ConfigOptionFloat(5));
 
-    def = this->add("wireframe_flat_delay", coFloat);
-    def->label = L("Flat delay");
-    def->category = L("Wireframe");
-    def->tooltip = L("Pause after printing each horizontal line so it can solidify before the "
-                     "next move pulls on it.");
-    def->sidetext = L("s");
+    def = this->add("eridian_speed_pillar", coFloat);
+    def->label = L("Pillar speed");
+    def->category = L("Eridian");
+    def->tooltip = L("Speed of the vertical pillars and the diagonal overhang braces. Should be slow "
+                     "so the filament cools and solidifies in the air.");
+    def->sidetext = L("mm/s");
     def->min = 0;
     def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(0.2));
-
-    def = this->add("wireframe_bottom_delay", coFloat);
-    def->label = L("Bottom delay");
-    def->category = L("Wireframe");
-    def->tooltip = L("Pause after a diagonal move has come down onto the previous cross-section.");
-    def->sidetext = L("s");
-    def->min = 0;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(0));
-
-    def = this->add("wireframe_top_delay", coFloat);
-    def->label = L("Top delay");
-    def->category = L("Wireframe");
-    def->tooltip = L("Pause at the top of an upward move, letting the tip of the strut solidify.");
-    def->sidetext = L("s");
-    def->min = 0;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(0));
-
-    def = this->add("wireframe_up_half_speed", coFloat);
-    def->label = L("Slow up distance");
-    def->category = L("Wireframe");
-    def->tooltip = L("Distance over which the start of an upward move is printed at half speed, "
-                     "to give the base of the strut a firmer anchor. Zero disables it.");
-    def->sidetext = L("mm");
-    def->min = 0;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(0.3));
-
-    def = this->add("wireframe_top_jump", coFloat);
-    def->label = L("Knot size");
-    def->category = L("Wireframe");
-    def->tooltip = L("For the \"Knot\" strategy: the size of the little loop made at the top of an "
-                     "upward move to anchor the strut.");
-    def->sidetext = L("mm");
-    def->min = 0;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(0.6));
-
-    def = this->add("wireframe_fall_down", coFloat);
-    def->label = L("Fall down");
-    def->category = L("Wireframe");
-    def->tooltip = L("For the \"Compensate\" strategy: how far a strut is expected to sag while "
-                     "printing. The upward move overshoots by this amount to compensate.");
-    def->sidetext = L("mm");
-    def->min = 0;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(0.5));
-
-    def = this->add("wireframe_drag_along", coFloat);
-    def->label = L("Drag along");
-    def->category = L("Wireframe");
-    def->tooltip = L("For the \"Compensate\" strategy: how far the top of a strut is dragged along "
-                     "toward the next node while the filament is still soft.");
-    def->sidetext = L("mm");
-    def->min = 0;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(0.6));
-
-    def = this->add("wireframe_strategy", coEnum);
-    def->label = L("Strategy");
-    def->category = L("Wireframe");
-    def->tooltip = L("How the nozzle behaves at the top of an upward strut in order to keep the "
-                     "cage from sagging: Compensate overshoots and drags the tip; Knot makes a small "
-                     "loop; Retract retracts filament at the top.");
-    def->set_enum<WireframeStrategy>({
-        { "compensate", L("Compensate") },
-        { "knot",       L("Knot")       },
-        { "retract",    L("Retract")    }
-    });
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionEnum<WireframeStrategy>(wsCompensate));
-
-    def = this->add("wireframe_straight_before_down", coPercent);
-    def->label = L("Straight before down");
-    def->category = L("Wireframe");
-    def->tooltip = L("Percentage of a downward move that is first printed horizontally before "
-                     "diving down, which helps the strut attach to the previous cross-section.");
-    def->sidetext = L("%");
-    def->min = 0;
-    def->max = 100;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionPercent(20));
-
-    def = this->add("wireframe_roof_fall_down", coFloat);
-    def->label = L("Roof fall down");
-    def->category = L("Wireframe");
-    def->tooltip = L("Sag compensation for the struts that fill in a flat roof or floor.");
-    def->sidetext = L("mm");
-    def->min = 0;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(2));
-
-    def = this->add("wireframe_roof_drag_along", coFloat);
-    def->label = L("Roof drag along");
-    def->category = L("Wireframe");
-    def->tooltip = L("How far the end of a roof or floor strut is dragged toward the next node "
-                     "while still soft.");
-    def->sidetext = L("mm");
-    def->min = 0;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(0.8));
-
-    def = this->add("wireframe_roof_outer_delay", coFloat);
-    def->label = L("Roof outer delay");
-    def->category = L("Wireframe");
-    def->tooltip = L("Pause on the outer lines of a roof or floor so they can solidify.");
-    def->sidetext = L("s");
-    def->min = 0;
-    def->mode = comExpert;
-    def->set_default_value(new ConfigOptionFloat(0.2));
+    def->set_default_value(new ConfigOptionFloat(5));
 
     def = this->add("standby_temperature_delta", coInt);
     def->label = L("Temperature variation");

@@ -176,11 +176,6 @@ enum DraftShield {
     dsDisabled, dsLimited, dsEnabled
 };
 
-// Compensation strategy for the top of an upward wireframe move (see Cura WirePrint).
-enum WireframeStrategy {
-    wsCompensate, wsKnot, wsRetract
-};
-
 enum class LabelObjectsStyle {
     Disabled, Octoprint, Firmware
 };
@@ -1046,31 +1041,15 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionFloat,              travel_acceleration))
     ((ConfigOptionFloat,              travel_short_distance_acceleration))
     ((ConfigOptionBools,              wipe))
-    // "Wire Printing" (Cura WirePrint / Weaver) — print the model as a mid-air wireframe cage.
-    ((ConfigOptionBool,               wireframe_enabled))
-    ((ConfigOptionFloat,              wireframe_height))
-    ((ConfigOptionFloat,              wireframe_roof_inset))
-    ((ConfigOptionFloat,              wireframe_nozzle_clearance))
-    ((ConfigOptionFloat,              wireframe_nozzle_outer_diameter))
-    ((ConfigOptionFloat,              wireframe_nozzle_expansion_angle))
-    ((ConfigOptionPercent,            wireframe_flow_connection))
-    ((ConfigOptionPercent,            wireframe_flow_flat))
-    ((ConfigOptionFloat,              wireframe_printspeed_bottom))
-    ((ConfigOptionFloat,              wireframe_printspeed_up))
-    ((ConfigOptionFloat,              wireframe_printspeed_down))
-    ((ConfigOptionFloat,              wireframe_printspeed_flat))
-    ((ConfigOptionFloat,              wireframe_flat_delay))
-    ((ConfigOptionFloat,              wireframe_bottom_delay))
-    ((ConfigOptionFloat,              wireframe_top_delay))
-    ((ConfigOptionFloat,              wireframe_up_half_speed))
-    ((ConfigOptionFloat,              wireframe_top_jump))
-    ((ConfigOptionFloat,              wireframe_fall_down))
-    ((ConfigOptionFloat,              wireframe_drag_along))
-    ((ConfigOptionEnum<WireframeStrategy>, wireframe_strategy))
-    ((ConfigOptionPercent,            wireframe_straight_before_down))
-    ((ConfigOptionFloat,              wireframe_roof_fall_down))
-    ((ConfigOptionFloat,              wireframe_roof_drag_along))
-    ((ConfigOptionFloat,              wireframe_roof_outer_delay))
+    // "Eridian Mode" — a wire-printing algorithm that builds a 3D truss: a flat triangular lattice
+    // net per layer, vertical pillars at the net vertices, braced outward with triangles under
+    // overhangs. A print-wide mode that replaces the normal planar slicing pipeline.
+    ((ConfigOptionBool,               eridian_mode))
+    ((ConfigOptionFloat,              eridian_pillar_height))
+    ((ConfigOptionFloat,              eridian_lattice_spacing))
+    ((ConfigOptionPercent,            eridian_flow))
+    ((ConfigOptionFloat,              eridian_speed_flat))
+    ((ConfigOptionFloat,              eridian_speed_pillar))
     ((ConfigOptionBool,               wipe_tower))
     ((ConfigOptionFloat,              wipe_tower_acceleration))
     ((ConfigOptionFloat,              wipe_tower_width))

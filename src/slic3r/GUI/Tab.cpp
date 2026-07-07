@@ -1548,44 +1548,16 @@ void TabPrint::build()
         optgroup->append_single_option_line("brim_width", category_path + "brim");
         optgroup->append_single_option_line("brim_separation", category_path + "brim");
 
-    page = add_options_page(L("Wireframe"), "layers");
-        optgroup = page->new_optgroup(L("Wire printing"));
-        optgroup->append_single_option_line("wireframe_enabled");
-        optgroup->append_single_option_line("wireframe_height");
-        optgroup->append_single_option_line("wireframe_strategy");
+    page = add_options_page(L("Eridian"), "layers");
+        optgroup = page->new_optgroup(L("Eridian mode"));
+        optgroup->append_single_option_line("eridian_mode");
+        optgroup->append_single_option_line("eridian_pillar_height");
+        optgroup->append_single_option_line("eridian_lattice_spacing");
 
-        optgroup = page->new_optgroup(L("Nozzle"));
-        optgroup->append_single_option_line("wireframe_nozzle_outer_diameter");
-        optgroup->append_single_option_line("wireframe_nozzle_expansion_angle");
-        optgroup->append_single_option_line("wireframe_nozzle_clearance");
-
-        optgroup = page->new_optgroup(L("Flow"));
-        optgroup->append_single_option_line("wireframe_flow_connection");
-        optgroup->append_single_option_line("wireframe_flow_flat");
-
-        optgroup = page->new_optgroup(L("Speed"));
-        optgroup->append_single_option_line("wireframe_printspeed_bottom");
-        optgroup->append_single_option_line("wireframe_printspeed_up");
-        optgroup->append_single_option_line("wireframe_printspeed_down");
-        optgroup->append_single_option_line("wireframe_printspeed_flat");
-
-        optgroup = page->new_optgroup(L("Sag compensation"));
-        optgroup->append_single_option_line("wireframe_fall_down");
-        optgroup->append_single_option_line("wireframe_drag_along");
-        optgroup->append_single_option_line("wireframe_top_jump");
-        optgroup->append_single_option_line("wireframe_up_half_speed");
-        optgroup->append_single_option_line("wireframe_straight_before_down");
-
-        optgroup = page->new_optgroup(L("Delays"));
-        optgroup->append_single_option_line("wireframe_flat_delay");
-        optgroup->append_single_option_line("wireframe_bottom_delay");
-        optgroup->append_single_option_line("wireframe_top_delay");
-
-        optgroup = page->new_optgroup(L("Roofs and floors"));
-        optgroup->append_single_option_line("wireframe_roof_inset");
-        optgroup->append_single_option_line("wireframe_roof_fall_down");
-        optgroup->append_single_option_line("wireframe_roof_drag_along");
-        optgroup->append_single_option_line("wireframe_roof_outer_delay");
+        optgroup = page->new_optgroup(L("Flow and speed"));
+        optgroup->append_single_option_line("eridian_flow");
+        optgroup->append_single_option_line("eridian_speed_flat");
+        optgroup->append_single_option_line("eridian_speed_pillar");
 
     page = add_options_page(L("Support material"), "support");
         category_path = "support-material_1698#";

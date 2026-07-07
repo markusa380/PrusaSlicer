@@ -274,10 +274,10 @@ private:
         const GCode::SmoothPathCache            &smooth_path_cache_global,
         GCodeOutputStream                       &output_stream);
 
-    // "Wire Printing" (Cura WirePrint / Weaver): replaces the normal planar per-layer export.
-    // Re-samples every object's cross-sections at the wireframe connection height, builds the
-    // wireframe cage and emits it as G-code directly through the writer.
-    void            export_wireframe(const Print &print, GCodeOutputStream &output_stream);
+    // "Eridian Mode": replaces the normal planar per-layer export. Re-samples every object's
+    // cross-sections at the lattice height, builds a triangular-lattice truss and emits it as
+    // G-code directly through the writer.
+    void            export_eridian(const Print &print, GCodeOutputStream &output_stream);
 
     void            set_extruders(const std::vector<unsigned int> &extruder_ids);
     std::string     preamble();
